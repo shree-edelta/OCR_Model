@@ -37,5 +37,5 @@ def detect_form_boxes(image_path):
     plt.show()
 
 # Test the function
-image_path = 'form_2.png'
+image_path = 'images/hform.jpg'
 detect_form_boxes(image_path)

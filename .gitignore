@@ -4,9 +4,5 @@ MJSynth_text_recognition/
 
 dataset/
 
-train_process_data.csv/
-train_processdata.csv/
-val_process_data.csv/
-val_processdat.csv/
-
-changes.py/
+object.v2i.yolov5pytorch/
+yolov5/

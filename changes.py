@@ -5,6 +5,7 @@ from tensorflow.keras.optimizers import Adam
 from keras.utils import to_categorical
 import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.callbacks import EarlyStopping
 
 # Reading the test data
 df_test = pd.read_csv('dataset/written_name_test_v2.csv')
@@ -37,7 +38,7 @@ def convert_data(file_name):
 
     return images_array, label_list
 
-# Model architecture
+
 def build_handwriting_recognition_model(img_height, img_width, num_classes):
    
     input_img = layers.Input(shape=(img_height, img_width, 1)) 
@@ -50,41 +51,37 @@ def build_handwriting_recognition_model(img_height, img_width, num_classes):
     x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     x = layers.MaxPooling2D(pool_size=(2, 2))(x)
 
-    # Reshape the feature maps to be compatible with RNN
     new_shape = (x.shape[1], x.shape[2] * x.shape[3])  
     x = layers.Reshape(target_shape=new_shape)(x)
 
     # RNN layers (LSTM)
     x = layers.Bidirectional(layers.LSTM(128, return_sequences=True))(x)
-    
-    # Output layer
+
     output = layers.Dense(num_classes, activation='softmax')(x)
 
     model = models.Model(inputs=input_img, outputs=output)
     return model
 
 
-# Custom CTC loss function
+
 def ctc_loss(y_true, y_pred):
     y_true = tf.cast(y_true, dtype=tf.int32)  
     y_pred = tf.cast(y_pred, dtype=tf.float32) 
 
     batch_size = tf.shape(y_pred)[0] 
-    time_steps = tf.shape(y_pred)[1]  # Time steps (width of input image after CNN + Pooling layers)
-    num_classes = tf.shape(y_pred)[2]  # Number of classes (output size of Dense layer)
+    time_steps = tf.shape(y_pred)[1]  
+    num_classes = tf.shape(y_pred)[2] 
 
-    # Compute the length of each sequence in the batch
-    input_length = tf.ones([batch_size], dtype=tf.int32) * time_steps  # All sequences have the same time steps (width of the image)
+   
+    input_length = tf.ones([batch_size], dtype=tf.int32) * time_steps  
 
-    # Compute the length of each label sequence
-    label_length = tf.reduce_sum(tf.cast(tf.not_equal(y_true, 0), dtype=tf.int32), axis=-1)  # Length of each label sequence (without padding)
+    # length of each label sequence
+    label_length = tf.reduce_sum(tf.cast(tf.not_equal(y_true, 0), dtype=tf.int32), axis=-1)  
 
-    # Compute CTC loss
     loss = tf.reduce_mean(tf.nn.ctc_loss(labels=y_true, logits=y_pred, label_length=label_length, logit_length=input_length, logits_time_major=False))
 
     return loss
 
-# Image resizing function
 def resize_images(images, target_height, target_width):
     resized_images = []
     for img in images:
@@ -95,20 +92,22 @@ def resize_images(images, target_height, target_width):
     return np.array(resized_images)
 
 # Set model parameters
-img_height = 32
-img_width = 128  
+img_height = 55
+img_width = 220  
 num_classes = 37  
 img_channels = 3
+early_stopping = EarlyStopping(monitor='val_loss',  # or 'val_accuracy'
+                               patience=5,           # Number of epochs to wait for improvement
+                               restore_best_weights=True,  # Restore model with the best validation performance
+                               verbose=1)
 
-# Loaddata
 train_images, train_labels = convert_data('dataset/train_process_data.csv')
 val_images, val_labels = convert_data('dataset/val_process_data.csv')
 
-# Resize the images to the required input size for the model
-train_images_resized = resize_images(train_images, 32, 128)
-val_images_resized = resize_images(val_images, 32, 128)
 
-# Pad the labels to the maximum length
+train_images_resized = resize_images(train_images, 55, 220)
+val_images_resized = resize_images(val_images, 55, 220)
+
 max_label_length = max(len(label) for label in train_labels)
 train_labels_padded = pad_sequences(train_labels, maxlen=max_label_length, padding='post', value=0)
 train_labels = np.array(train_labels_padded)
@@ -126,14 +125,14 @@ print(f"Validation labels shape: {val_labels.shape}, type: {val_labels.dtype}")
 model = build_handwriting_recognition_model(img_height, img_width, num_classes)
 model.compile(optimizer=Adam(), loss=ctc_loss)
 
-# Train the model
-model.fit(train_images_resized, train_labels, epochs=10, batch_size=32, validation_data=(val_images_resized, val_labels))
-model.save('cnn_rnn_model.h5')
+model.fit(train_images_resized, train_labels, epochs=50, batch_size=32, validation_data=(val_images_resized, val_labels),callbacks = [early_stopping])
+# model.save('cnn_rnn_model.h5')
+model.save('ocr.keras')
 
-# Evaluate 
 test_images, test_labels = convert_data('dataset/test_process_data.csv')
 
-test_images_resized = resize_images(test_images, 32, 128) 
+max_label_length = max(len(label) for label in test_labels)
+test_images_resized = resize_images(test_images, 55, 220) 
 test_labels_padded = pad_sequences(test_labels, maxlen=max_label_length, padding='post', value=0)  
 
 
@@ -143,3 +142,8 @@ print(f'Test Loss: {test_loss}')
 # predictions on test data
 y_pred = model.predict(test_images_resized)
 print(f"Predicted shape: {y_pred.shape}")
+
+acc = model.accuracy(test_images_resized, test_labels_padded)
+print(f"Accuracy: {acc}")
+
+print(model.summary())
